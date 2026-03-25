@@ -1,142 +1,94 @@
 import streamlit as st
 import pandas as pd
 import re
-import json
+from io import BytesIO
 
-st.set_page_config(page_title="FDF Error List", layout="wide")
+st.set_page_config(page_title="ITOSE - Tools", layout="wide")
 
-st.title("🔥 FDF Error List Tool (All-in-One)")
+st.title("ITOSE Tools - FDF ERROR LIST")
 
-# =========================
-# REGEX (เหมือน repo)
-# =========================
-REQ_ID_REGEX = r'Request ID:\s*([0-9a-fA-F\-]{36})'
-VIN_REGEX = r'"vin":"(.*?)"'
-DEVICE_REGEX = r'"deviceId":"(.*?)"'
-ERROR_CODE_REGEX = r'"errorCode":"(.*?)"|errorCode=(\w+)'
-ERROR_MSG_REGEX = r'"errorMessage":"(.*?)"|errorMessage=(.*)'
-DATETIME_REGEX = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
-
+uploaded_file = st.file_uploader(
+    "📥 Upload Log File",
+    type=["txt", "csv", "xlsx"]
+)
 
 # =========================
-# HELPER
+# REGEX
 # =========================
-def extract(pattern, text):
-    match = re.search(pattern, text)
-    if match:
-        return next((g for g in match.groups() if g), None)
-    return None
+REQ_ID_REGEX = r"Request ID:\s*([0-9a-fA-F\-]{36})"
+
+# ดึง vin + deviceId เป็นคู่
+PAIR_REGEX = r'"vin":"(.*?)".*?"deviceId":"(.*?)"'
 
 
 # =========================
-# CORE LOGIC (context-aware)
+# READ FILE
 # =========================
-def process_log(lines):
+def read_file(file):
+    filename = file.name.lower()
+
+    if filename.endswith(".txt"):
+        content = file.read().decode("utf-8", errors="ignore")
+        return content.splitlines()
+
+    elif filename.endswith(".csv"):
+        df = pd.read_csv(file, dtype=str)
+        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+
+    elif filename.endswith(".xlsx"):
+        df = pd.read_excel(file, dtype=str)
+        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+
+    return []
+
+
+# =========================
+# EXTRACT
+# =========================
+def extract_data(lines):
     results = []
+    no = 1
 
-    current_request_id = None
-    current_vin = None
-    current_device = None
+    for i in range(len(lines)):
+        line = str(lines[i])
 
-    for line in lines:
+        if "ERROR" in line:
 
-        # Request ID
-        req_id = extract(REQ_ID_REGEX, line)
-        if req_id:
-            current_request_id = req_id
-            current_vin = None
-            current_device = None
+            # ===== หา Request ID =====
+            request_id = None
+            if i + 1 < len(lines):
+                next_line = str(lines[i + 1])
+                req_match = re.search(REQ_ID_REGEX, next_line)
+                if req_match:
+                    request_id = req_match.group(1)
 
-        # VIN
-        vin = extract(VIN_REGEX, line)
-        if vin:
-            current_vin = vin
+            # ===== หา VIN + DeviceID (หลายตัว) =====
+            pairs = re.findall(PAIR_REGEX, line)
 
-        # Device ID
-        device = extract(DEVICE_REGEX, line)
-        if device:
-            current_device = device
-
-        # Error
-        error_code = extract(ERROR_CODE_REGEX, line)
-        error_msg = extract(ERROR_MSG_REGEX, line)
-
-        if error_code or error_msg:
-            row = {
-                "datetime": extract(DATETIME_REGEX, line),
-                "RequestID": current_request_id,
-                "vin": current_vin,
-                "deviceId": current_device,
-                "errorCode": error_code,
-                "errorMessage": error_msg,
-                "raw_log": line.strip()
-            }
-            results.append(row)
+            for vin, device in pairs:
+                results.append({
+                    "No.": no,
+                    "Request ID": request_id,
+                    "VIN": vin,
+                    "DeviceID": device
+                })
+                no += 1
 
     return pd.DataFrame(results)
 
 
 # =========================
-# READ FILE (smart detect)
+# MAIN
 # =========================
-def read_file(uploaded_file):
-    filename = uploaded_file.name.lower()
-
-    # ===== LOG / TXT =====
-    if filename.endswith((".txt", ".log")):
-        content = uploaded_file.read().decode("utf-8", errors="ignore")
-        return content.splitlines(), "log"
-
-    # ===== CSV =====
-    elif filename.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-        return df, "table"
-
-    # ===== EXCEL =====
-    elif filename.endswith(".xlsx"):
-        df = pd.read_excel(uploaded_file)
-        return df, "table"
-
-    # ===== JSON =====
-    elif filename.endswith(".json"):
-        try:
-            data = json.load(uploaded_file)
-            df = pd.json_normalize(data)
-            return df, "table"
-        except:
-            return None, None
-
-    return None, None
-
-
-# =========================
-# UPLOAD
-# =========================
-uploaded_file = st.file_uploader(
-    "📂 Upload file (.log / .txt / .csv / .xlsx / .json)",
-    type=["txt", "log", "xlsx", "csv", "json"]
-)
-
 if uploaded_file:
+    lines = read_file(uploaded_file)
+    df = extract_data(lines)
 
-    data, file_type = read_file(uploaded_file)
-
-    if data is None:
-        st.warning("❌ Unsupported or empty file")
-        st.stop()
-
-    # =========================
-    # 🔥 HANDLE TYPE
-    # =========================
-    if file_type == "log":
-        df = process_log(data)
-
-    elif file_type == "table":
-        df = data
-
-    if df is None or df.empty:
+    if df.empty:
         st.warning("❌ No data found")
         st.stop()
+
+    st.success(f"✅ Extracted {len(df)} records")
 
     # =========================
     # ORIGINAL TABLE
@@ -145,7 +97,7 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🎯 COLUMN SELECTOR
+    # 🎯 SELECT COLUMNS
     # =========================
     st.subheader("🎯 Select Columns")
 
@@ -166,25 +118,22 @@ if uploaded_file:
     # =========================
     # EXPORT
     # =========================
-    st.subheader("⬇️ Export")
 
-    col1, col2 = st.columns(2)
+    # CSV
+    csv = df_selected.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "📥 Download CSV",
+        csv,
+        "fdferrorlist.csv"
+    )
 
-    with col1:
-        csv = df_selected.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "Download CSV",
-            csv,
-            "fdf_output.csv",
-            "text/csv"
-        )
+    # Excel
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_selected.to_excel(writer, index=False)
 
-    with col2:
-        df_selected.to_excel("fdf_output.xlsx", index=False)
-        with open("fdf_output.xlsx", "rb") as f:
-            st.download_button(
-                "Download Excel",
-                f,
-                "fdf_output.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    st.download_button(
+        "📥 Download Excel",
+        output.getvalue(),
+        "fdferrorlist.xlsx"
+    )
