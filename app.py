@@ -17,7 +17,6 @@ uploaded_file = st.file_uploader(
 # =========================
 REQ_ID_REGEX = r"Request ID:\s*([0-9a-fA-F\-]{36})"
 
-# ดึง vin + deviceId เป็นคู่
 PAIR_REGEX = r'"vin":"(.*?)".*?"deviceId":"(.*?)"'
 
 
@@ -54,7 +53,6 @@ def extract_data(lines):
 
         if "ERROR" in line:
 
-            # ===== หา Request ID =====
             request_id = None
             if i + 1 < len(lines):
                 next_line = str(lines[i + 1])
@@ -62,7 +60,6 @@ def extract_data(lines):
                 if req_match:
                     request_id = req_match.group(1)
 
-            # ===== หา VIN + DeviceID (หลายตัว) =====
             pairs = re.findall(PAIR_REGEX, line)
 
             for vin, device in pairs:
@@ -97,23 +94,25 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🎯 SELECT COLUMNS (Checkbox)
+    # 🎯 SELECT COLUMNS (FIXED)
     # =========================
     st.subheader("🎯 Select Columns")
+
+    # init state
+    if "selected_cols" not in st.session_state:
+        st.session_state.selected_cols = df.columns.tolist()
 
     col1, col2 = st.columns(2)
 
     with col1:
         if st.button("✅ Select All"):
             st.session_state.selected_cols = df.columns.tolist()
+            st.rerun()
 
     with col2:
         if st.button("❌ Deselect All"):
             st.session_state.selected_cols = []
-
-    # init state
-    if "selected_cols" not in st.session_state:
-        st.session_state.selected_cols = df.columns.tolist()
+            st.rerun()
 
     selected_columns = []
 
@@ -124,15 +123,15 @@ if uploaded_file:
             checked = st.checkbox(
                 col,
                 value=col in st.session_state.selected_cols,
-                key=f"col_{col}"
+                key=f"chk_{col}"
             )
             if checked:
                 selected_columns.append(col)
 
-    # update state
+    # sync state
     st.session_state.selected_cols = selected_columns
 
-    # กันเลือกว่าง
+    # กัน user เลือกว่าง
     if not selected_columns:
         st.warning("⚠️ Please select at least one column")
         st.stop()
@@ -148,16 +147,9 @@ if uploaded_file:
     # =========================
     # EXPORT
     # =========================
-
-    # CSV
     csv = df_selected.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "📥 Download CSV",
-        csv,
-        "fdferrorlist.csv"
-    )
+    st.download_button("📥 Download CSV", csv, "fdferrorlist.csv")
 
-    # Excel
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_selected.to_excel(writer, index=False)
