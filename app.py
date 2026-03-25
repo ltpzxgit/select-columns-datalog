@@ -3,9 +3,9 @@ import pandas as pd
 import re
 import json
 
-st.set_page_config(page_title="FDF Error List", layout="wide")
+st.set_page_config(page_title="ITOSE - Tools", layout="wide")
 
-st.title("🔥 FDF Error List Tool (Context Aware + All File Support)")
+st.title("FDF Error List Tool - Select Columns")
 
 # =========================
 # REGEX (เหมือน repo)
