@@ -1,66 +1,98 @@
 import streamlit as st
 import pandas as pd
+import re
 
-# 🔥 import logic จาก repo เดิม
-# สมมติชื่อไฟล์เดิม: parser.py
-from app import ltpzxgit/fdf-error-list  # <-- เปลี่ยนชื่อให้ตรง repo จริง
+st.set_page_config(page_title="FDF Error Tool+", layout="wide")
 
-st.set_page_config(page_title="FDF Tool+", layout="wide")
+st.title("🔥 FDF Error Tool (Enhanced)")
 
-st.title("🚀 FDF Tool (Enhanced Version)")
+# =========================
+# REGEX (เหมือน repo)
+# =========================
+REQ_ID_REGEX = r'Request ID:\s*([0-9a-fA-F\-]{36})'
+VIN_REGEX = r'"vin":"(.*?)"'
+DEVICE_REGEX = r'"deviceId":"(.*?)"'
+ERROR_CODE_REGEX = r'"errorCode":"(.*?)"|errorCode=(\w+)'
+ERROR_MSG_REGEX = r'"errorMessage":"(.*?)"|errorMessage=(.*)'
+DATETIME_REGEX = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+
+
+# =========================
+# PARSE FUNCTION (เหมือน repo)
+# =========================
+def extract(pattern, text):
+    match = re.search(pattern, text)
+    if match:
+        return next((g for g in match.groups() if g), None)
+    return None
+
+
+def parse_log(lines):
+    results = []
+
+    current_req_id = None
+
+    for line in lines:
+        req_id = extract(REQ_ID_REGEX, line)
+        if req_id:
+            current_req_id = req_id
+
+        data = {
+            "datetime": extract(DATETIME_REGEX, line),
+            "RequestID": current_req_id,
+            "vin": extract(VIN_REGEX, line),
+            "deviceId": extract(DEVICE_REGEX, line),
+            "errorCode": extract(ERROR_CODE_REGEX, line),
+            "errorMessage": extract(ERROR_MSG_REGEX, line),
+            "raw": line.strip()
+        }
+
+        # เอาเฉพาะ line ที่มีข้อมูลจริง
+        if any([data["vin"], data["deviceId"], data["errorCode"]]):
+            results.append(data)
+
+    return pd.DataFrame(results)
+
 
 # =========================
 # UPLOAD
 # =========================
-uploaded_file = st.file_uploader("Upload log file")
+uploaded_file = st.file_uploader("📂 Upload log file", type=["txt", "log"])
 
 if uploaded_file:
-    # =========================
-    # ใช้ logic เดิม 100%
-    # =========================
-    df = process_log_file(uploaded_file)
+    content = uploaded_file.read().decode("utf-8", errors="ignore")
+    lines = content.splitlines()
 
-    if df is None or df.empty:
-        st.warning("No data")
+    # 🔥 ใช้ logic แบบ repo
+    df = parse_log(lines)
+
+    if df.empty:
+        st.warning("❌ No data found")
         st.stop()
 
     # =========================
-    # PREVIEW (เพิ่มเข้าไป)
+    # TABLE เดิม (เหมือน repo)
     # =========================
-    st.subheader("📊 Original Table")
+    st.subheader("📊 Original Table (เหมือน repo)")
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🎯 COLUMN SELECTOR (ของใหม่)
+    # 🎯 เพิ่ม Column Selector
     # =========================
     st.subheader("🎯 Select Columns")
 
-    selected_columns = st.multiselect(
+    selected_cols = st.multiselect(
         "Choose columns",
         df.columns.tolist(),
         default=df.columns.tolist()
     )
 
-    df_selected = df[selected_columns]
+    df_selected = df[selected_cols]
 
     # =========================
-    # FILTER (optional เพิ่มเข้าไป)
+    # PREVIEW ใหม่
     # =========================
-    st.subheader("🔍 Filter")
-
-    col_filter = st.selectbox("Select column to filter", df_selected.columns)
-
-    keyword = st.text_input("Keyword")
-
-    if keyword:
-        df_selected = df_selected[
-            df_selected[col_filter].astype(str).str.contains(keyword, case=False, na=False)
-        ]
-
-    # =========================
-    # FINAL PREVIEW
-    # =========================
-    st.subheader("📌 Final Preview")
+    st.subheader("📌 Preview (Selected Columns)")
     st.dataframe(df_selected, use_container_width=True)
 
     # =========================
@@ -76,7 +108,6 @@ if uploaded_file:
 
     with col2:
         df_selected.to_excel("output.xlsx", index=False)
-
         with open("output.xlsx", "rb") as f:
             st.download_button(
                 "Download Excel",
