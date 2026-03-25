@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import re
 
-st.set_page_config(page_title="FDF Error Tool+", layout="wide")
+st.set_page_config(page_title="FDF Error List", layout="wide")
 
-st.title("🔥 FDF Error Tool (Enhanced)")
+st.title("📊 FDF Error List Tool")
 
 # =========================
-# REGEX (เหมือน repo)
+# REGEX (เหมือน repo เดิม)
 # =========================
 REQ_ID_REGEX = r'Request ID:\s*([0-9a-fA-F\-]{36})'
 VIN_REGEX = r'"vin":"(.*?)"'
@@ -18,7 +18,7 @@ DATETIME_REGEX = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
 
 
 # =========================
-# PARSE FUNCTION (เหมือน repo)
+# HELPER
 # =========================
 def extract(pattern, text):
     match = re.search(pattern, text)
@@ -27,31 +27,35 @@ def extract(pattern, text):
     return None
 
 
-def parse_log(lines):
+# =========================
+# CORE LOGIC (เหมือน repo)
+# =========================
+def process_log(lines):
     results = []
-
-    current_req_id = None
+    current_request_id = None
 
     for line in lines:
+        # เก็บ RequestID แบบ context
         req_id = extract(REQ_ID_REGEX, line)
         if req_id:
-            current_req_id = req_id
+            current_request_id = req_id
 
-        data = {
+        row = {
             "datetime": extract(DATETIME_REGEX, line),
-            "RequestID": current_req_id,
+            "RequestID": current_request_id,
             "vin": extract(VIN_REGEX, line),
             "deviceId": extract(DEVICE_REGEX, line),
             "errorCode": extract(ERROR_CODE_REGEX, line),
             "errorMessage": extract(ERROR_MSG_REGEX, line),
-            "raw": line.strip()
+            "raw_log": line.strip()
         }
 
-        # เอาเฉพาะ line ที่มีข้อมูลจริง
-        if any([data["vin"], data["deviceId"], data["errorCode"]]):
-            results.append(data)
+        # เงื่อนไขเหมือน repo: เอาเฉพาะ line ที่มี data สำคัญ
+        if any([row["vin"], row["deviceId"], row["errorCode"]]):
+            results.append(row)
 
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+    return df
 
 
 # =========================
@@ -63,40 +67,40 @@ if uploaded_file:
     content = uploaded_file.read().decode("utf-8", errors="ignore")
     lines = content.splitlines()
 
-    # 🔥 ใช้ logic แบบ repo
-    df = parse_log(lines)
+    # 🔥 ใช้ logic เดิม
+    df = process_log(lines)
 
     if df.empty:
         st.warning("❌ No data found")
         st.stop()
 
     # =========================
-    # TABLE เดิม (เหมือน repo)
+    # ORIGINAL TABLE (เหมือน repo เป๊ะ)
     # =========================
-    st.subheader("📊 Original Table (เหมือน repo)")
+    st.subheader("📊 Original Table")
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🎯 เพิ่ม Column Selector
+    # 🔥 เพิ่ม: COLUMN SELECTOR
     # =========================
     st.subheader("🎯 Select Columns")
 
-    selected_cols = st.multiselect(
-        "Choose columns",
+    selected_columns = st.multiselect(
+        "Choose columns to display/export",
         df.columns.tolist(),
         default=df.columns.tolist()
     )
 
-    df_selected = df[selected_cols]
+    df_selected = df[selected_columns]
 
     # =========================
-    # PREVIEW ใหม่
+    # PREVIEW หลังเลือก
     # =========================
     st.subheader("📌 Preview (Selected Columns)")
     st.dataframe(df_selected, use_container_width=True)
 
     # =========================
-    # EXPORT
+    # EXPORT (เฉพาะ column ที่เลือก)
     # =========================
     st.subheader("⬇️ Export")
 
@@ -104,14 +108,19 @@ if uploaded_file:
 
     with col1:
         csv = df_selected.to_csv(index=False).encode("utf-8")
-        st.download_button("Download CSV", csv, "output.csv")
+        st.download_button(
+            "Download CSV",
+            csv,
+            "fdf_error_list.csv",
+            "text/csv"
+        )
 
     with col2:
-        df_selected.to_excel("output.xlsx", index=False)
-        with open("output.xlsx", "rb") as f:
+        df_selected.to_excel("fdf_error_list.xlsx", index=False)
+        with open("fdf_error_list.xlsx", "rb") as f:
             st.download_button(
                 "Download Excel",
                 f,
-                "output.xlsx",
+                "fdf_error_list.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
