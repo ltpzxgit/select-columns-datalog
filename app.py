@@ -3,7 +3,7 @@ import pandas as pd
 
 # 🔥 import logic จาก repo เดิม
 # สมมติชื่อไฟล์เดิม: parser.py
-from app import fdf-error-list  # <-- เปลี่ยนชื่อให้ตรง repo จริง
+from app import ltpzxgit/fdf-error-list  # <-- เปลี่ยนชื่อให้ตรง repo จริง
 
 st.set_page_config(page_title="FDF Tool+", layout="wide")
 
