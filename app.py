@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 import re
+import json
 
 st.set_page_config(page_title="FDF Error List", layout="wide")
 
-st.title("📊 FDF Error List Tool (Excel รองรับแล้ว)")
+st.title("🔥 FDF Error List Tool (Context Aware + All File Support)")
 
 # =========================
-# REGEX (เหมือน repo เดิม)
+# REGEX (เหมือน repo)
 # =========================
 REQ_ID_REGEX = r'Request ID:\s*([0-9a-fA-F\-]{36})'
 VIN_REGEX = r'"vin":"(.*?)"'
@@ -17,6 +18,9 @@ ERROR_MSG_REGEX = r'"errorMessage":"(.*?)"|errorMessage=(.*)'
 DATETIME_REGEX = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
 
 
+# =========================
+# HELPER
+# =========================
 def extract(pattern, text):
     match = re.search(pattern, text)
     if match:
@@ -25,60 +29,96 @@ def extract(pattern, text):
 
 
 # =========================
-# CORE LOGIC (เหมือน repo)
+# CORE LOGIC (🔥 context-aware)
 # =========================
 def process_log(lines):
     results = []
+
     current_request_id = None
+    current_vin = None
+    current_device = None
 
     for line in lines:
+
+        # ===== Request ID =====
         req_id = extract(REQ_ID_REGEX, line)
         if req_id:
             current_request_id = req_id
+            current_vin = None
+            current_device = None
 
-        row = {
-            "datetime": extract(DATETIME_REGEX, line),
-            "RequestID": current_request_id,
-            "vin": extract(VIN_REGEX, line),
-            "deviceId": extract(DEVICE_REGEX, line),
-            "errorCode": extract(ERROR_CODE_REGEX, line),
-            "errorMessage": extract(ERROR_MSG_REGEX, line),
-            "raw_log": line.strip()
-        }
+        # ===== VIN =====
+        vin = extract(VIN_REGEX, line)
+        if vin:
+            current_vin = vin
 
-        if any([row["vin"], row["deviceId"], row["errorCode"]]):
+        # ===== Device =====
+        device = extract(DEVICE_REGEX, line)
+        if device:
+            current_device = device
+
+        # ===== Error =====
+        error_code = extract(ERROR_CODE_REGEX, line)
+        error_msg = extract(ERROR_MSG_REGEX, line)
+
+        if error_code or error_msg:
+            row = {
+                "datetime": extract(DATETIME_REGEX, line),
+                "RequestID": current_request_id,
+                "vin": current_vin,
+                "deviceId": current_device,
+                "errorCode": error_code,
+                "errorMessage": error_msg,
+                "raw_log": line.strip()
+            }
             results.append(row)
 
     return pd.DataFrame(results)
 
 
 # =========================
-# READ FILE (รองรับ Excel)
+# READ FILE (รองรับทุก format)
 # =========================
 def read_file(uploaded_file):
     filename = uploaded_file.name.lower()
 
+    # TXT / LOG
     if filename.endswith((".txt", ".log")):
         content = uploaded_file.read().decode("utf-8", errors="ignore")
         return content.splitlines()
 
+    # CSV
+    elif filename.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+
+    # EXCEL
     elif filename.endswith(".xlsx"):
-        df_excel = pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file)
+        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
 
-        # 🔥 เอาทุก column มารวมเป็น string ต่อ row
-        lines = df_excel.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
-        return lines
+    # JSON
+    elif filename.endswith(".json"):
+        try:
+            data = json.load(uploaded_file)
 
-    else:
-        return []
+            if isinstance(data, list):
+                return [json.dumps(item) for item in data]
+
+            elif isinstance(data, dict):
+                return [json.dumps(data)]
+        except:
+            return []
+
+    return []
 
 
 # =========================
 # UPLOAD
 # =========================
 uploaded_file = st.file_uploader(
-    "📂 Upload file",
-    type=["txt", "log", "xlsx"]
+    "📂 Upload file (.log / .txt / .csv / .xlsx / .json)",
+    type=["txt", "log", "xlsx", "csv", "json"]
 )
 
 if uploaded_file:
