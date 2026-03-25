@@ -3,9 +3,9 @@ import pandas as pd
 import re
 import json
 
-st.set_page_config(page_title="ITOSE - Tools", layout="wide")
+st.set_page_config(page_title="FDF Error List", layout="wide")
 
-st.title("FDF Error List Tool - Select Columns")
+st.title("🔥 FDF Error List Tool (All-in-One)")
 
 # =========================
 # REGEX (เหมือน repo)
@@ -29,7 +29,7 @@ def extract(pattern, text):
 
 
 # =========================
-# CORE LOGIC (🔥 context-aware)
+# CORE LOGIC (context-aware)
 # =========================
 def process_log(lines):
     results = []
@@ -40,24 +40,24 @@ def process_log(lines):
 
     for line in lines:
 
-        # ===== Request ID =====
+        # Request ID
         req_id = extract(REQ_ID_REGEX, line)
         if req_id:
             current_request_id = req_id
             current_vin = None
             current_device = None
 
-        # ===== VIN =====
+        # VIN
         vin = extract(VIN_REGEX, line)
         if vin:
             current_vin = vin
 
-        # ===== Device =====
+        # Device ID
         device = extract(DEVICE_REGEX, line)
         if device:
             current_device = device
 
-        # ===== Error =====
+        # Error
         error_code = extract(ERROR_CODE_REGEX, line)
         error_msg = extract(ERROR_MSG_REGEX, line)
 
@@ -77,40 +77,36 @@ def process_log(lines):
 
 
 # =========================
-# READ FILE (รองรับทุก format)
+# READ FILE (smart detect)
 # =========================
 def read_file(uploaded_file):
     filename = uploaded_file.name.lower()
 
-    # TXT / LOG
+    # ===== LOG / TXT =====
     if filename.endswith((".txt", ".log")):
         content = uploaded_file.read().decode("utf-8", errors="ignore")
-        return content.splitlines()
+        return content.splitlines(), "log"
 
-    # CSV
+    # ===== CSV =====
     elif filename.endswith(".csv"):
         df = pd.read_csv(uploaded_file)
-        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+        return df, "table"
 
-    # EXCEL
+    # ===== EXCEL =====
     elif filename.endswith(".xlsx"):
         df = pd.read_excel(uploaded_file)
-        return df.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+        return df, "table"
 
-    # JSON
+    # ===== JSON =====
     elif filename.endswith(".json"):
         try:
             data = json.load(uploaded_file)
-
-            if isinstance(data, list):
-                return [json.dumps(item) for item in data]
-
-            elif isinstance(data, dict):
-                return [json.dumps(data)]
+            df = pd.json_normalize(data)
+            return df, "table"
         except:
-            return []
+            return None, None
 
-    return []
+    return None, None
 
 
 # =========================
@@ -122,22 +118,30 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
-    lines = read_file(uploaded_file)
 
-    if not lines:
+    data, file_type = read_file(uploaded_file)
+
+    if data is None:
         st.warning("❌ Unsupported or empty file")
         st.stop()
 
-    df = process_log(lines)
+    # =========================
+    # 🔥 HANDLE TYPE
+    # =========================
+    if file_type == "log":
+        df = process_log(data)
 
-    if df.empty:
+    elif file_type == "table":
+        df = data
+
+    if df is None or df.empty:
         st.warning("❌ No data found")
         st.stop()
 
     # =========================
     # ORIGINAL TABLE
     # =========================
-    st.subheader("📊 Original Table")
+    st.subheader("📊 Original Data")
     st.dataframe(df, use_container_width=True)
 
     # =========================
@@ -171,16 +175,16 @@ if uploaded_file:
         st.download_button(
             "Download CSV",
             csv,
-            "fdf_error_list.csv",
+            "fdf_output.csv",
             "text/csv"
         )
 
     with col2:
-        df_selected.to_excel("fdf_error_list.xlsx", index=False)
-        with open("fdf_error_list.xlsx", "rb") as f:
+        df_selected.to_excel("fdf_output.xlsx", index=False)
+        with open("fdf_output.xlsx", "rb") as f:
             st.download_button(
                 "Download Excel",
                 f,
-                "fdf_error_list.xlsx",
+                "fdf_output.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
