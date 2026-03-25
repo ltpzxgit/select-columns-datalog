@@ -4,7 +4,7 @@ import re
 
 st.set_page_config(page_title="FDF Error List", layout="wide")
 
-st.title("📊 FDF Error List Tool")
+st.title("📊 FDF Error List Tool (Excel รองรับแล้ว)")
 
 # =========================
 # REGEX (เหมือน repo เดิม)
@@ -17,9 +17,6 @@ ERROR_MSG_REGEX = r'"errorMessage":"(.*?)"|errorMessage=(.*)'
 DATETIME_REGEX = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
 
 
-# =========================
-# HELPER
-# =========================
 def extract(pattern, text):
     match = re.search(pattern, text)
     if match:
@@ -35,7 +32,6 @@ def process_log(lines):
     current_request_id = None
 
     for line in lines:
-        # เก็บ RequestID แบบ context
         req_id = extract(REQ_ID_REGEX, line)
         if req_id:
             current_request_id = req_id
@@ -50,24 +46,48 @@ def process_log(lines):
             "raw_log": line.strip()
         }
 
-        # เงื่อนไขเหมือน repo: เอาเฉพาะ line ที่มี data สำคัญ
         if any([row["vin"], row["deviceId"], row["errorCode"]]):
             results.append(row)
 
-    df = pd.DataFrame(results)
-    return df
+    return pd.DataFrame(results)
+
+
+# =========================
+# READ FILE (รองรับ Excel)
+# =========================
+def read_file(uploaded_file):
+    filename = uploaded_file.name.lower()
+
+    if filename.endswith((".txt", ".log")):
+        content = uploaded_file.read().decode("utf-8", errors="ignore")
+        return content.splitlines()
+
+    elif filename.endswith(".xlsx"):
+        df_excel = pd.read_excel(uploaded_file)
+
+        # 🔥 เอาทุก column มารวมเป็น string ต่อ row
+        lines = df_excel.astype(str).apply(lambda x: " ".join(x), axis=1).tolist()
+        return lines
+
+    else:
+        return []
 
 
 # =========================
 # UPLOAD
 # =========================
-uploaded_file = st.file_uploader("📂 Upload log file", type=["txt", "log"])
+uploaded_file = st.file_uploader(
+    "📂 Upload file",
+    type=["txt", "log", "xlsx"]
+)
 
 if uploaded_file:
-    content = uploaded_file.read().decode("utf-8", errors="ignore")
-    lines = content.splitlines()
+    lines = read_file(uploaded_file)
 
-    # 🔥 ใช้ logic เดิม
+    if not lines:
+        st.warning("❌ Unsupported or empty file")
+        st.stop()
+
     df = process_log(lines)
 
     if df.empty:
@@ -75,18 +95,18 @@ if uploaded_file:
         st.stop()
 
     # =========================
-    # ORIGINAL TABLE (เหมือน repo เป๊ะ)
+    # ORIGINAL TABLE
     # =========================
     st.subheader("📊 Original Table")
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🔥 เพิ่ม: COLUMN SELECTOR
+    # 🎯 COLUMN SELECTOR
     # =========================
     st.subheader("🎯 Select Columns")
 
     selected_columns = st.multiselect(
-        "Choose columns to display/export",
+        "Choose columns",
         df.columns.tolist(),
         default=df.columns.tolist()
     )
@@ -94,13 +114,13 @@ if uploaded_file:
     df_selected = df[selected_columns]
 
     # =========================
-    # PREVIEW หลังเลือก
+    # PREVIEW
     # =========================
     st.subheader("📌 Preview (Selected Columns)")
     st.dataframe(df_selected, use_container_width=True)
 
     # =========================
-    # EXPORT (เฉพาะ column ที่เลือก)
+    # EXPORT
     # =========================
     st.subheader("⬇️ Export")
 
