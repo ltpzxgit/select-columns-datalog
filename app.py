@@ -97,15 +97,45 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     # =========================
-    # 🎯 SELECT COLUMNS
+    # 🎯 SELECT COLUMNS (Checkbox)
     # =========================
     st.subheader("🎯 Select Columns")
 
-    selected_columns = st.multiselect(
-        "Choose columns",
-        df.columns.tolist(),
-        default=df.columns.tolist()
-    )
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("✅ Select All"):
+            st.session_state.selected_cols = df.columns.tolist()
+
+    with col2:
+        if st.button("❌ Deselect All"):
+            st.session_state.selected_cols = []
+
+    # init state
+    if "selected_cols" not in st.session_state:
+        st.session_state.selected_cols = df.columns.tolist()
+
+    selected_columns = []
+
+    cols = st.columns(4)
+
+    for i, col in enumerate(df.columns):
+        with cols[i % 4]:
+            checked = st.checkbox(
+                col,
+                value=col in st.session_state.selected_cols,
+                key=f"col_{col}"
+            )
+            if checked:
+                selected_columns.append(col)
+
+    # update state
+    st.session_state.selected_cols = selected_columns
+
+    # กันเลือกว่าง
+    if not selected_columns:
+        st.warning("⚠️ Please select at least one column")
+        st.stop()
 
     df_selected = df[selected_columns]
 
